@@ -2,6 +2,9 @@
 
 Automatically extracts vertical CAT-grating bar widths from top-down SEM images (both *zoomed* and *un-zoomed*) and visualises how each bar's width varies with height.
 
+![CAT-Grating Bar Width Analysis Example](outputs/PostKOH_Center_Frontside_analysis.png)
+*Example output showing traced bar edges (left) and width-vs-height curves with modulo 100 x-axis (right)*
+
 ---
 ## 1. Quick start
 
@@ -44,7 +47,9 @@ The output `outputs/PostKOH_Center_Frontside_analysis.png` contains:
 2. **Right pane** – width-vs-height curves
    * x-axis = bar width (nm if scale-bar detected, otherwise px)
    * y-axis = height within bar, starting at bar bottom
-   * curves are horizontally offset so they don't overlap but still share the same x-scale.
+   * curves are horizontally offset so they don't overlap
+   * x-axis labels repeat in a modulo 100 pattern (alternating 0 and 100)
+   * actual width values (nm/px) are shown at the top of each curve
 
 ---
 ## 2. Intuitive algorithm overview
@@ -71,7 +76,7 @@ The output `outputs/PostKOH_Center_Frontside_analysis.png` contains:
 | Edge extraction | `find_boundaries(mask, mode="outer")` | — |
 | Width vs height | Scan-line loop, record min/max x | see `measure_widths()` |
 | Smoothing | 1-D moving average | window `k = --smooth` |
-| Scale-bar | CC heuristic → Hough fallback | assumes "100 nm" (edit in `detect_scale_bar`) |
+| Scale-bar | CC heuristic → Hough fallback | 1) Uses scale bar marked "100 nm" 2) Auto-adjusts if detected width differs from expected 80nm |
 
 ---
 ## 4. Handling bar **yaw (rotation)**
@@ -82,8 +87,9 @@ The script assumes bars are roughly vertical; small yaw (≤ a few degrees) simp
 ## 5. Customisation pointers
 
 * **Parameters** – tweak thresholds and morphology constants in `src/utils.py`.
-* **Scale value** – change the physical length of the reference bar (`nm_value` argument in `detect_scale_bar`).
+* **Scale value** – adjust the reference bar value (`nm_value` in `detect_scale_bar`) or the expected bar width (`expected_bar_width_nm` in `analyze_image`).
 * **Different smoothing** – swap the moving-average in `analyze_barwidth.py` with a Savitzky–Golay filter, spline, etc.
+* **Plot formatting** – modify the tick spacing, label format, or x-axis limits in `plot_results`.
 
 ---
 Happy analysing!  Open issues or PRs are welcome. 

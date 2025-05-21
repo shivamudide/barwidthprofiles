@@ -6,6 +6,7 @@ from skimage.morphology import remove_small_objects, closing, square
 from skimage.segmentation import find_boundaries
 from pathlib import Path
 from typing import List, Tuple
+from matplotlib.ticker import FuncFormatter, MultipleLocator
 
 
 def read_image(path: str) -> np.ndarray:
@@ -225,7 +226,8 @@ def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, i
 
     The left pane shows the SEM image with **edge traces** (not bounding boxes)
     of each bar coloured uniquely. The right pane plots width (x-axis) versus
-    height (y-axis) for every bar, horizontally shifted so curves don't overlap.
+    height (y-axis) for every bar, using a modulo 100 approach to show all bars
+    on the same scale without horizontal shifts.
     """
     cmap = plt.get_cmap('rainbow')
     n_bars = len(bars)
@@ -258,10 +260,11 @@ def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, i
         ax_img.add_patch(rect_sb)
         ax_img.text(x_sb, y_sb - 8, f'{units}', color='white', fontsize=6)
 
-    # ---------- WIDTH vs HEIGHT PLOT ----------
-    # Determine shift so curves don't overlap too much
+    # ---------- WIDTH vs HEIGHT PLOT (with offset, labels modulo 100) ----------
+    # Determine a horizontal shift for each successive bar so curves are separated
     max_width = max((w.max() if w.size else 0 for _, w in bar_measurements), default=10)
-    x_shift_unit = max_width * 1.3  # 30% padding
+    # Add 30 % padding so neighbouring bars don't collide
+    x_shift_unit = max(100, max_width * 1.3)
 
     for idx, ((ys_rel, widths), color) in enumerate(zip(bar_measurements, colors)):
         if widths.size == 0:
@@ -270,10 +273,33 @@ def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, i
         ax_plot.plot(x_vals, ys_rel, '-', color=color, lw=1)
         ax_plot.scatter(x_vals, ys_rel, color=color, s=5)
 
-    ax_plot.set_xlabel(f'Bar width ({units})  [curves shifted horizontally]')
+        # Add text annotation with the mean actual width (nm or px) near curve top
+        if len(ys_rel):
+            top_y = ys_rel.min()
+            avg_w = np.mean(widths)
+            ax_plot.text(x_vals[0], top_y - 20, f"{avg_w:.1f}", color=color, fontsize=8)
+
+    # Make x-axis labels repeat 0-100 by formatting tick labels modulo 100
+    ax_plot.set_xlabel(f'Bar width ({units}) [modulo 100]')
     ax_plot.set_ylabel(f'Height within bar ({units})')
     ax_plot.set_title('Bar width vs height (each colour = bar)')
     ax_plot.grid(True, alpha=0.3)
+
+    # If there are N bars we expect x range up to N*x_shift_unit + 100
+    ax_plot.set_xlim(0, n_bars * x_shift_unit)
+
+    # Tick locator every 20 units but labels shown modulo 100
+    ax_plot.xaxis.set_major_locator(MultipleLocator(20))
+    # Alternate between 0 and 100 for multiples of 100
+    def alt_format(val, pos):
+        if val % 100 != 0:  # Not a multiple of 100, no label
+            return ""
+        # Check if it's an even or odd multiple of 100
+        if (val // 100) % 2 == 0:
+            return "0"
+        else:
+            return "100"
+    ax_plot.xaxis.set_major_formatter(FuncFormatter(alt_format))
 
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)

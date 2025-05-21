@@ -79,11 +79,27 @@ def analyze_image(img_path: Path, out_dir: Path, debug: bool = False, smooth: in
     # Detect scale bar to convert pixels -> nm
     # --------------------------------------------------
     nm_per_px, sb_bbox = detect_scale_bar(img)
+    
+    # Calculate average bar width in pixels
+    avg_bar_width_px = np.mean([np.mean(widths) for _, widths in bar_measurements_px])
+    
     if debug:
         if np.isfinite(nm_per_px):
             print(f"Detected scale bar: 1px = {nm_per_px:.3f} nm")
+            print(f"Average bar width: {avg_bar_width_px:.1f} px = {avg_bar_width_px * nm_per_px:.1f} nm")
         else:
             print("Scale bar not detected – keeping pixel units.")
+    
+    # If detected width is significantly different from expected 80nm,
+    # adjust the scale factor (assuming bars should be ~80nm wide)
+    expected_bar_width_nm = 80.0
+    if np.isfinite(nm_per_px):
+        detected_bar_width_nm = avg_bar_width_px * nm_per_px
+        if abs(detected_bar_width_nm - expected_bar_width_nm) > 20:  # If off by more than 20nm
+            adjusted_nm_per_px = expected_bar_width_nm / avg_bar_width_px
+            if debug:
+                print(f"Adjusting scale: 1px = {adjusted_nm_per_px:.3f} nm (based on expected bar width of ~80nm)")
+            nm_per_px = adjusted_nm_per_px
 
     if np.isfinite(nm_per_px):
         units = 'nm'
