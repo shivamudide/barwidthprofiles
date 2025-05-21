@@ -138,9 +138,63 @@ def measure_widths(mask: np.ndarray, bbox: Tuple[int, int, int, int]) -> Tuple[n
     return np.array(ys_rel), np.array(widths)
 
 
+def detect_scale_bar(img: np.ndarray, nm_value: int = 100) -> Tuple[float, Tuple[int, int, int, int] | None]:
+    """Detect the horizontal scale bar (e.g., "100nm" line) at the bottom of an SEM image.
+
+    Parameters
+    ----------
+    img : np.ndarray (grayscale 0-255)
+    nm_value : int
+        The physical length represented by the scale bar (nanometres).
+
+    Returns
+    -------
+    nm_per_px : float
+        Conversion factor from pixels to nanometres. `np.nan` if detection fails.
+    bbox : (y, x, h, w) or None
+        Bounding box of detected scale bar in original-image coordinates (top-left y, top-left x, height, width).
+    """
+    h, w = img.shape
+    # Focus on bottom 30% of image where the scale bar & legend typically reside
+    roi_y0 = int(0.7 * h)
+    roi = img[roi_y0:]
+
+    # Threshold to keep bright (white) pixels
+    _, bin_roi = cv2.threshold(roi, 200, 255, cv2.THRESH_BINARY)
+
+    # Morphological opening to remove small noise (text specs)
+    kernel = np.ones((3, 3), np.uint8)
+    opened = cv2.morphologyEx(bin_roi, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    # Connected components
+    num, lbl, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
+
+    best_w = 0
+    best_bbox = None  # (y, x, h, w) in global coords
+    for i in range(1, num):
+        x, y, comp_w, comp_h, area = stats[i]
+        # Filter: thin & wide candidates
+        if comp_h > 10 or comp_w < 20:
+            continue
+        aspect = comp_w / max(comp_h, 1)
+        if aspect < 5:  # want very elongated horizontal object
+            continue
+        if comp_w > best_w:
+            best_w = comp_w
+            best_bbox = (roi_y0 + y, x, comp_h, comp_w)
+
+    if best_w > 0:
+        nm_per_px = nm_value / best_w
+        return nm_per_px, best_bbox
+    # fallback: failure
+    return float('nan'), None
+
+
 def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, int, int, int]],
                  bar_measurements: List[Tuple[np.ndarray, np.ndarray]],
-                 out_path: Path):
+                 out_path: Path,
+                 units: str = 'px',
+                 scale_bar_bbox: Tuple[int, int, int, int] | None = None):
     """Plot image with bar edges highlighted and width-vs-height curves.
 
     The left pane shows the SEM image with **edge traces** (not bounding boxes)
@@ -171,9 +225,15 @@ def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, i
         # label near the top
         ax_img.text(minc, max(minr - 10, 0), str(idx), color=color, fontsize=8, weight='bold')
 
+    # Optional: draw scale bar bbox
+    if scale_bar_bbox is not None:
+        y_sb, x_sb, h_sb, w_sb = scale_bar_bbox
+        rect_sb = plt.Rectangle((x_sb, y_sb), w_sb, h_sb, edgecolor='white', facecolor='none', linewidth=1.0, linestyle='--')
+        ax_img.add_patch(rect_sb)
+        ax_img.text(x_sb, y_sb - 8, f'{units}', color='white', fontsize=6)
+
     # ---------- WIDTH vs HEIGHT PLOT ----------
     # Determine shift so curves don't overlap too much
-    # Base it on max bar width
     max_width = max((w.max() if w.size else 0 for _, w in bar_measurements), default=10)
     x_shift_unit = max_width * 1.3  # 30% padding
 
@@ -184,8 +244,8 @@ def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, i
         ax_plot.plot(x_vals, ys_rel, '-', color=color, lw=1)
         ax_plot.scatter(x_vals, ys_rel, color=color, s=5)
 
-    ax_plot.set_xlabel('Bar width (pixels)  [curves shifted horizontally for clarity]')
-    ax_plot.set_ylabel('Height within bar (pixels)')
+    ax_plot.set_xlabel(f'Bar width ({units})  [curves shifted horizontally]')
+    ax_plot.set_ylabel(f'Height within bar ({units})')
     ax_plot.set_title('Bar width vs height (each colour = bar)')
     ax_plot.invert_yaxis()  # so bar top is at top of plot
     ax_plot.grid(True, alpha=0.3)
