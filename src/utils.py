@@ -252,8 +252,8 @@ def create_bar_animation_gif(img: np.ndarray, bins_mask: np.ndarray, bars: List[
     
     # Set up plot formatting
     ax_plot.set_xlabel(f'Bar width ({units}) [modulo 100]')
-    ax_plot.set_ylabel(f'Height within bar ({units})')
-    ax_plot.set_title('Bar width vs height (current bar highlighted)')
+    ax_plot.set_ylabel(f'Length within bar ({units})')
+    ax_plot.set_title('Bar width vs Length (current bar highlighted)')
     ax_plot.grid(True, alpha=0.3)
     
     # Determine maximum width for plot scaling
@@ -439,8 +439,8 @@ def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, i
 
     # Make x-axis labels repeat 0-100 by formatting tick labels modulo 100
     ax_plot.set_xlabel(f'Bar width ({units}) [modulo 100]')
-    ax_plot.set_ylabel(f'Height within bar ({units})')
-    ax_plot.set_title('Bar width vs height (each colour = bar)')
+    ax_plot.set_ylabel(f'Length within bar ({units})')
+    ax_plot.set_title('Bar width vs length (each colour = bar)')
     ax_plot.grid(True, alpha=0.3)
 
     # If there are N bars we expect x range up to N*x_shift_unit + 100
