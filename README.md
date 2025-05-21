@@ -11,6 +11,13 @@ Automatically extracts vertical CAT-grating bar widths from top-down SEM images 
 ---
 ## 1. Quick start
 
+### 1.0 Clone the repo
+
+```bash
+git clone https://github.com/shivamudide/barwidthprofiles.git
+cd barwidthprofiles
+```
+
 ### 1.1  Create the environment
 
 ```bash
