@@ -13,11 +13,12 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python src/analyze_barwidth.py path/to/image.png --out outputs --debug
+python src/analyze_barwidth.py path/to/image.png --out outputs --smooth 5 --debug
 ```
 
 * `path/to/image.png` – path to either a **zoomed** or **unzoomed** SEM image.
 * `--out` – directory where the annotated figure will be saved (created automatically).
+* `--smooth` – moving-average window size applied to every width-vs-height curve. `1` (default) means *no* smoothing.
 * `--debug` – print extra information during processing.
 
 The output file `<image>_analysis.png` contains:

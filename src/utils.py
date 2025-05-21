@@ -173,19 +173,45 @@ def detect_scale_bar(img: np.ndarray, nm_value: int = 100) -> Tuple[float, Tuple
     best_bbox = None  # (y, x, h, w) in global coords
     for i in range(1, num):
         x, y, comp_w, comp_h, area = stats[i]
-        # Filter: thin & wide candidates
-        if comp_h > 10 or comp_w < 20:
+        # Filter: reasonably thin & wide candidates
+        if comp_h > 30 or comp_w < 20:
             continue
         aspect = comp_w / max(comp_h, 1)
-        if aspect < 5:  # want very elongated horizontal object
+        if aspect < 4:  # want elongated horizontal object
             continue
-        if comp_w > best_w:
+        # slightly favour objects with small height (thinner)
+        score = comp_w / (comp_h + 1)
+        if score > best_w:
             best_w = comp_w
             best_bbox = (roi_y0 + y, x, comp_h, comp_w)
 
     if best_w > 0:
         nm_per_px = nm_value / best_w
         return nm_per_px, best_bbox
+
+    # ---------- Fallback: Hough line detection ----------
+    edges = cv2.Canny(roi, threshold1=50, threshold2=150)
+    lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=50,
+                            minLineLength=30, maxLineGap=5)
+    if lines is not None:
+        # Choose the longest nearly-horizontal line
+        longest_len = 0
+        best_line = None
+        for l in lines:
+            x1, y1, x2, y2 = l[0]
+            # check horizontal orientation
+            if abs(y2 - y1) > 5:
+                continue
+            length = abs(x2 - x1)
+            if length > longest_len:
+                longest_len = length
+                best_line = (x1, y1, x2, y2)
+        if best_line is not None and longest_len > 20:
+            x1, y1, x2, y2 = best_line
+            nm_per_px = nm_value / longest_len
+            bbox = (roi_y0 + min(y1, y2), min(x1, x2), abs(y2 - y1) + 1, longest_len)
+            return nm_per_px, bbox
+
     # fallback: failure
     return float('nan'), None
 
@@ -247,7 +273,6 @@ def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, i
     ax_plot.set_xlabel(f'Bar width ({units})  [curves shifted horizontally]')
     ax_plot.set_ylabel(f'Height within bar ({units})')
     ax_plot.set_title('Bar width vs height (each colour = bar)')
-    ax_plot.invert_yaxis()  # so bar top is at top of plot
     ax_plot.grid(True, alpha=0.3)
 
     fig.tight_layout()
