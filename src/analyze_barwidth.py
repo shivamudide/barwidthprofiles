@@ -25,22 +25,44 @@ def analyze_image(img_path: Path, out_dir: Path, debug: bool = False, smooth: in
     # Binarize image
     bin_img = binarize_image(img)
 
-    # Detect if this is unzoomed (multiple rows) or zoomed (single row)
-    rows = [get_middle_row_region(bin_img)]  # default assume one row: middle
-    # Heuristic: if detected rows count >=3 we treat as unzoomed, else zoomed
-    # This is handled inside get_middle_row_region. For analysis we'll just use middle row.
-    y0, y1 = rows[0]
-    crop_bin = bin_img[y0:y1]
+    # No assumption about contrast polarity: handled later by variant selection.
 
-    # Find bars in cropped binary image
-    bars_bboxes = find_bars(crop_bin)
-    # Offset bbox y coords by y0
-    bars_bboxes = [(b[0] + y0, b[1], b[2] + y0, b[3]) for b in bars_bboxes]
+    # ------------------------------------------------------------------
+    # Attempt detection on both the **original** and **inverted** binary
+    # images and choose whichever variant yields more (reasonable) bars.
+    # This handles both contrast polarities (bars bright vs bars dark).
+    # ------------------------------------------------------------------
+
+    import cv2  # local import – avoids circular deps in some environments
+
+    variants = [
+        ("orig", bin_img),
+        ("inv", cv2.bitwise_not(bin_img)),
+    ]
+
+    best = None  # tuple(mask, bars_bboxes_in_crop, y0, y1)
+
+    for name, mask in variants:
+        y0_var, y1_var = get_middle_row_region(mask)
+        crop = mask[y0_var:y1_var]
+        bars = find_bars(crop)
+
+        if best is None or len(bars) > len(best[1]):
+            best = (mask, bars, y0_var, y1_var)
+
+    # Unpack best variant
+    bin_mask_for_measure, bars_bboxes_crop, y0_best, y1_best = best
+
+    # Offset bbox y coords by y0_best to original-image coordinates
+    bars_bboxes = [(b[0] + y0_best, b[1], b[2] + y0_best, b[3]) for b in bars_bboxes_crop]
+
+    # Binary mask in boolean form for width measurement
+    mask_bool = bin_mask_for_measure > 0
 
     # Measure widths per bar (in pixels)
     bar_measurements_px: List[Tuple[np.ndarray, np.ndarray]] = []
     for bbox in bars_bboxes:
-        ys_rel, widths = measure_widths(bin_img > 0, bbox)
+        ys_rel, widths = measure_widths(mask_bool, bbox)
         bar_measurements_px.append((ys_rel, widths))
 
     # Optional smoothing
@@ -72,7 +94,7 @@ def analyze_image(img_path: Path, out_dir: Path, debug: bool = False, smooth: in
 
     # Plot results
     out_path = out_dir / f"{img_path.stem}_analysis.png"
-    plot_results(img, bin_img, bars_bboxes, bar_measurements, out_path, units=units, scale_bar_bbox=sb_bbox)
+    plot_results(img, bin_mask_for_measure, bars_bboxes, bar_measurements, out_path, units=units, scale_bar_bbox=sb_bbox)
 
     if debug:
         print(f"Processed {img_path.name}: {len(bars_bboxes)} bars found. Output saved to {out_path}")
