@@ -16,6 +16,7 @@ from utils import (
     measure_widths,
     plot_results,
     detect_scale_bar,
+    create_bar_animation_gif,
 )
 
 
@@ -111,9 +112,13 @@ def analyze_image(img_path: Path, out_dir: Path, debug: bool = False, smooth: in
     # Plot results
     out_path = out_dir / f"{img_path.stem}_analysis.png"
     plot_results(img, bin_mask_for_measure, bars_bboxes, bar_measurements, out_path, units=units, scale_bar_bbox=sb_bbox)
-
+    
+    # Create animation GIF showing one bar at a time
+    gif_path = create_bar_animation_gif(img, bin_mask_for_measure, bars_bboxes, bar_measurements, out_path, units=units, scale_bar_bbox=sb_bbox)
+    
     if debug:
         print(f"Processed {img_path.name}: {len(bars_bboxes)} bars found. Output saved to {out_path}")
+        print(f"Bar animation GIF saved to {gif_path}")
 
 
 if __name__ == "__main__":

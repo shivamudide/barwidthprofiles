@@ -2,6 +2,9 @@
 
 Automatically extracts vertical CAT-grating bar widths from top-down SEM images (both *zoomed* and *un-zoomed*) and visualises how each bar's width varies with height.
 
+![Bar-by-bar animation](outputs/PostKOH_Center_Frontside_analysis.gif)
+*Animation showing each bar highlighted one at a time*
+
 ![CAT-Grating Bar Width Analysis Example](outputs/PostKOH_Center_Frontside_analysis.png)
 *Example output showing traced bar edges (left) and width-vs-height curves with modulo 100 x-axis (right)*
 

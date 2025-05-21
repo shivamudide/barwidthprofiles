@@ -7,6 +7,9 @@ from skimage.segmentation import find_boundaries
 from pathlib import Path
 from typing import List, Tuple
 from matplotlib.ticker import FuncFormatter, MultipleLocator
+import matplotlib.animation as animation
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 
 
 def read_image(path: str) -> np.ndarray:
@@ -215,6 +218,161 @@ def detect_scale_bar(img: np.ndarray, nm_value: int = 100) -> Tuple[float, Tuple
 
     # fallback: failure
     return float('nan'), None
+
+
+def create_bar_animation_gif(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, int, int, int]],
+                          bar_measurements: List[Tuple[np.ndarray, np.ndarray]],
+                          out_path: Path,
+                          units: str = 'px',
+                          scale_bar_bbox: Tuple[int, int, int, int] | None = None):
+    """Create a GIF animation showing one bar at a time for each frame.
+    
+    Each frame of the animation displays a single bar both in the SEM image and the width-vs-height plot.
+    """
+    if len(bars) == 0:
+        return
+    
+    cmap = plt.get_cmap('rainbow')
+    n_bars = len(bars)
+    colors = [cmap(i / n_bars) for i in range(n_bars)]
+    
+    # Setup figure
+    fig, (ax_img, ax_plot) = plt.subplots(1, 2, figsize=(14, 7), gridspec_kw={'width_ratios': [1, 1]})
+    
+    # Set up the base image that will be displayed on each frame
+    ax_img.imshow(img, cmap='gray')
+    ax_img.set_axis_off()
+    
+    # Optional: draw scale bar bbox
+    if scale_bar_bbox is not None:
+        y_sb, x_sb, h_sb, w_sb = scale_bar_bbox
+        rect_sb = plt.Rectangle((x_sb, y_sb), w_sb, h_sb, edgecolor='white', facecolor='none', linewidth=1.0, linestyle='--')
+        ax_img.add_patch(rect_sb)
+        ax_img.text(x_sb, y_sb - 8, f'{units}', color='white', fontsize=6)
+    
+    # Set up plot formatting
+    ax_plot.set_xlabel(f'Bar width ({units}) [modulo 100]')
+    ax_plot.set_ylabel(f'Height within bar ({units})')
+    ax_plot.set_title('Bar width vs height (current bar highlighted)')
+    ax_plot.grid(True, alpha=0.3)
+    
+    # Determine maximum width for plot scaling
+    max_width = max((w.max() if w.size else 0 for _, w in bar_measurements), default=10)
+    x_shift_unit = max(100, max_width * 1.3)
+    ax_plot.set_xlim(0, n_bars * x_shift_unit)
+    
+    # Tick formatting
+    ax_plot.xaxis.set_major_locator(MultipleLocator(20))
+    def alt_format(val, pos):
+        if val % 100 != 0:
+            return ""
+        if (val // 100) % 2 == 0:
+            return "0"
+        else:
+            return "100"
+    ax_plot.xaxis.set_major_formatter(FuncFormatter(alt_format))
+    
+    # Plot edges and width curves for all bars in light gray first
+    gray_edges_artists = []
+    gray_plot_artists = []
+    
+    for idx, (bbox, meas) in enumerate(zip(bars, bar_measurements)):
+        minr, minc, maxr, maxc = bbox
+        ys_rel, widths = meas
+        
+        # Draw bar edges in gray
+        bar_mask = bins_mask[minr:maxr, minc:maxc] > 0
+        edges = find_boundaries(bar_mask, mode='outer')
+        ys, xs = np.where(edges)
+        if ys.size > 0:
+            gray_artist, = ax_img.plot(xs + minc, ys + minr, '.', color='lightgray', markersize=0.8, alpha=0.3)
+            gray_edges_artists.append(gray_artist)
+        
+        # Draw width plot in gray
+        if widths.size > 0:
+            x_vals = widths + idx * x_shift_unit
+            gray_line, = ax_plot.plot(x_vals, ys_rel, '-', color='lightgray', lw=0.5, alpha=0.3)
+            gray_scatter = ax_plot.scatter(x_vals, ys_rel, color='lightgray', s=2, alpha=0.3)
+            gray_plot_artists.append((gray_line, gray_scatter))
+    
+    # Create highlighted bar artists that will be updated in each frame
+    highlight_edge_artist, = ax_img.plot([], [], '.', markersize=1, animated=True)
+    highlight_line_artist, = ax_plot.plot([], [], '-', lw=1.5, animated=True)
+    highlight_scatter_artist = ax_plot.scatter([], [], s=5, animated=True)
+    highlight_bar_label = ax_img.text(0, 0, "", fontsize=10, weight='bold', animated=True)
+    highlight_width_label = ax_plot.text(0, 0, "", fontsize=10, animated=True)
+    
+    def init_animation():
+        highlight_edge_artist.set_data([], [])
+        highlight_line_artist.set_data([], [])
+        highlight_scatter_artist.set_offsets(np.empty((0, 2)))
+        highlight_bar_label.set_text("")
+        highlight_width_label.set_text("")
+        return (highlight_edge_artist, highlight_line_artist, highlight_scatter_artist, 
+                highlight_bar_label, highlight_width_label)
+    
+    def update_frame(frame_idx):
+        if frame_idx >= len(bars):
+            return (highlight_edge_artist, highlight_line_artist, highlight_scatter_artist, 
+                    highlight_bar_label, highlight_width_label)
+        
+        bbox = bars[frame_idx]
+        ys_rel, widths = bar_measurements[frame_idx]
+        color = colors[frame_idx]
+        
+        # Update bar edge highlight
+        minr, minc, maxr, maxc = bbox
+        bar_mask = bins_mask[minr:maxr, minc:maxc] > 0
+        edges = find_boundaries(bar_mask, mode='outer')
+        ys, xs = np.where(edges)
+        
+        if ys.size > 0:
+            highlight_edge_artist.set_data(xs + minc, ys + minr)
+            highlight_edge_artist.set_color(color)
+            
+            # Update bar label
+            highlight_bar_label.set_position((minc, max(minr - 10, 0)))
+            highlight_bar_label.set_text(str(frame_idx))
+            highlight_bar_label.set_color(color)
+        else:
+            highlight_edge_artist.set_data([], [])
+            highlight_bar_label.set_text("")
+        
+        # Update width plot highlight
+        if widths.size > 0:
+            x_vals = widths + frame_idx * x_shift_unit
+            highlight_line_artist.set_data(x_vals, ys_rel)
+            highlight_line_artist.set_color(color)
+            
+            # Update scatter points
+            highlight_scatter_artist.set_offsets(np.column_stack((x_vals, ys_rel)))
+            highlight_scatter_artist.set_color(color)
+            
+            # Update width label
+            avg_w = np.mean(widths)
+            highlight_width_label.set_position((x_vals[0], ys_rel.min() - 20))
+            highlight_width_label.set_text(f"{avg_w:.1f}")
+            highlight_width_label.set_color(color)
+        else:
+            highlight_line_artist.set_data([], [])
+            highlight_scatter_artist.set_offsets(np.empty((0, 2)))
+            highlight_width_label.set_text("")
+        
+        return (highlight_edge_artist, highlight_line_artist, highlight_scatter_artist, 
+                highlight_bar_label, highlight_width_label)
+    
+    # Create the animation
+    anim = animation.FuncAnimation(
+        fig, update_frame, frames=n_bars, init_func=init_animation, 
+        blit=True, interval=500  # 500ms per frame
+    )
+    
+    # Save as GIF
+    gif_path = out_path.with_suffix('.gif')
+    anim.save(gif_path, writer='pillow', dpi=150)
+    plt.close(fig)
+    
+    return gif_path
 
 
 def plot_results(img: np.ndarray, bins_mask: np.ndarray, bars: List[Tuple[int, int, int, int]],
